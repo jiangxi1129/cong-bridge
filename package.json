@@ -1,0 +1,20 @@
+{
+  "name": "cong-bridge",
+  "version": "1.0.0",
+  "description": "cong-bridge：让住在 ChatGPT 网页对话里的 AI 接上你家里的消息和工具（派生自 wynsyl1014/mcp-app-message-bridge，MIT）",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/test-bridge-logic.mjs test/test-bridge-replay.mjs"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^2.0.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.6.4"
+  },
+  "type": "module",
+  "main": "src/server.mjs",
+  "engines": {
+    "node": ">=22"
+  }
+}

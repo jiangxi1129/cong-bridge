@@ -1,0 +1,23 @@
+{
+  "_说明": "复制成 toolbox.json。每个键是一个「箱子」（AI 用 home_tools 看、用 home_call 调）。以下划线开头的键不读。",
+
+  "search": {
+    "url": "http://127.0.0.1:3500/mcp",
+    "about": "搜网页、读网页",
+    "timeout": 60000
+  },
+  "notes": {
+    "stdio": { "command": "node", "args": ["~/my-mcp/notes-server.mjs"], "cwd": "~/my-mcp" },
+    "about": "家里的共享笔记",
+    "allow": ["search_notes", "read_note"]
+  },
+  "legacy": {
+    "url": "http://127.0.0.1:3600/mcp",
+    "rpc": true,
+    "headers": { "Authorization": "Bearer 换成你的" },
+    "about": "跟官方 SDK 客户端握不上手的老服务器，走简易 JSON-RPC",
+    "allow": ["lookup"]
+  },
+
+  "_字段": "url（HTTP 的 MCP）或 stdio（本机命令）二选一；rpc:true 用简易 JSON-RPC；headers 带认证头；allow 只放这些工具（强烈建议写）；timeout 毫秒，默认 120000；about 一句话给 AI 看。另有一个内置箱子 handoff（交接卡），不用写。"
+}

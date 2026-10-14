@@ -1,0 +1,29 @@
+cong-bridge 派生自：
+
+  wynsyl1014/mcp-app-message-bridge
+  https://github.com/wynsyl1014/mcp-app-message-bridge
+  Copyright (c) 2026 Sylvie
+  MIT License
+
+上游提供的是协议内核与参考架构：MCP App 的资源/工具接线、
+`ui/update-model-context → ui/message` 的调用顺序、事件身份和
+reserve/release 生命周期、单条在飞、陈旧/重复恢复的模式。
+「让 AI 住在 ChatGPT 网页对话里、用网页对话的轮次说话，不消耗 Codex / API 额度」
+这个出发点也来自上游。
+
+上游 README 明写「这不是一键部署」，把记忆、唤醒策略、调度、队列、
+提示词、通知通道和产品行为留给实现者。本仓库是那一半的一个实现，
+外加实际长期运行中长出来的部分：一次性取件号与租约退回、主卡片租约、
+落盘与重启恢复、写盘失败回滚、工具集结（home_tools / home_call）、
+闹钟、记事本、交接卡、离线时不找别人冒名顶替，以及可选的浏览器附件。
+
+另外借鉴了一个思路（没有用它的代码）：
+
+  xyz99906131110-a11y/ChatTG-Bridge（MIT）
+  https://github.com/xyz99906131110-a11y/ChatTG-Bridge
+  换绑对话时给对话编一个代次（epoch），代次对不上的在途消息打回待送、
+  而不是丢掉；已经产生副作用的不回滚。
+  我们早期照这个做过代次回收，后来换成了 90 秒认领租约，
+  但「没产生副作用的打回重送、已产生副作用的不回滚」这条切分是从那里学的。
+
+上游许可证全文见 LICENSE（MIT）。

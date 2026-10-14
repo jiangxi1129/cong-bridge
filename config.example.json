@@ -1,0 +1,42 @@
+{
+  "_说明": "复制成 config.json 再改。以下划线开头的键都是说明，程序不读。除了 agentName / ownerName，其余都可以不填。",
+
+  "port": 18461,
+  "dataDir": "~/.cong-bridge",
+  "_dataDir": "队列、闹钟、记事本、交接卡都存这里。secretDir 不填就是 dataDir/secrets。",
+
+  "agentName": "Nova",
+  "ownerName": "主人",
+  "personaFile": "~/my-ai/persona.md",
+  "_personaFile": "卡片挂上时交给 AI 的身份文件（纯文本）。不填就不给。",
+
+  "ownerPrefixRegex": "^主人：",
+  "priorityPrefixRegex": "^\\[轮到你了\\]",
+  "_prefixRegex": "队列里先送谁：priority 匹配的插一次队，owner 匹配的（主人说的话）其次，其余先来后到。都不填就是先来先送。",
+
+  "lateReplyCommand": ["sh", "-c", "printf '%s\\t%s\\n' \"$DEDUPE_KEY\" \"$TEXT\" >> ~/.cong-bridge/late-replies.tsv"],
+  "_lateReplyCommand": "调用方已经断开、或超时以后 AI 才回的话交给这个命令（环境变量 TEXT、DEDUPE_KEY）。收货那头请按 DEDUPE_KEY 去重。不配的话迟到的回复会告诉 AI 没送到。",
+  "notifyCommand": ["sh", "-c", "printf '%s\\n' \"$TEXT\" >> ~/.cong-bridge/notify.log"],
+  "_notifyCommand": "桥卡住、换窗成败这类要告诉人的事，交给这个命令（环境变量 TEXT）。不配就只记日志。",
+
+  "toolboxFile": "./toolbox.json",
+  "imageDirs": ["~/Pictures/for-ai"],
+  "_imageDirs": "bridge_view_image 只能看这些目录里的图。不填就不能看图。",
+
+  "extraContext": "",
+  "_extraContext": "每条消息附带给 AI 看的一段话（聊天框里不显示），比如家里的说话规矩。",
+  "replyTimeoutMinutes": 8,
+  "timezoneOffsetHours": 8,
+  "publicHeader": "cf-connecting-ip",
+  "_publicHeader": "用来认「这是隧道从公网转进来的请求」的头。Cloudflare Tunnel 会加 cf-connecting-ip；别的隧道填它会加的头（比如 x-forwarded-for）。认错了 /health 等本机接口会暴露到公网。",
+
+  "cardLabel": "cong-bridge",
+  "messagePrefix": "@cong-bridge",
+  "_messagePrefix": "送进对话的每条消息开头的标记；extras/auto-confirm.mjs 靠它认出桥的确认框。",
+
+  "cdpUrl": "",
+  "chatgptAppName": "",
+  "swapWindowScript": "",
+  "swapPhrase": "挂上桥",
+  "_浏览器附件": "可选，都要 Chrome 用 --remote-debugging-port 开着。填 cdpUrl（如 http://127.0.0.1:9222）启用卡片看守和标签巡检；填 chatgptAppName（你在 ChatGPT 里给应用起的名字）和 swapWindowScript（如 ./extras/swap-window.mjs），/reset 会顺手开新对话换窗（cdpUrl 不填按 9222 算）。"
+}
