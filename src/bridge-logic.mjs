@@ -108,6 +108,10 @@ export async function settleUiTimeout(eventId, holdUntil, deps) {
 export function pickNextEvent(pendingNow, lastClaimedWasPriority, isPriority = () => false, isOwner = () => false) {
   if (!pendingNow.length)
     return null;
+  // 换窗口时桥递过来的交接卡排在最前（连优先件都让它先）：新窗口先接上上一个窗口在做什么，再处理别的
+  const handoffIdx = pendingNow.findIndex((e) => e && e.kind === "handoff");
+  if (handoffIdx >= 0)
+    return { event: pendingNow[handoffIdx], index: handoffIdx, why: "handoff" };
   const priIdx = lastClaimedWasPriority ? -1 : pendingNow.findIndex((e) => isPriority(e));
   if (priIdx >= 0)
     return { event: pendingNow[priIdx], index: priIdx, why: "priority" };

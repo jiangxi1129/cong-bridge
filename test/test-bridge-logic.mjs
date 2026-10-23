@@ -155,6 +155,9 @@ test('先送谁：优先件只连插一次 > 主人的话 > 先来先送', () =>
   assert.deepEqual(pickNextEvent([wake1, group], false, isPriority, isOwner), { event: wake1, index: 0, why: 'fifo' })
   assert.deepEqual(pickNextEvent([wake1, own1]), { event: wake1, index: 0, why: 'fifo' })
   assert.equal(pickNextEvent([], false, isPriority, isOwner), null)
+  // 换窗交接卡排最前，连优先件都让它先
+  const hand = { id: 'h1', kind: 'handoff', room: 'chat' }
+  assert.deepEqual(pickNextEvent([bell, own1, hand], false, isPriority, isOwner), { event: hand, index: 2, why: 'handoff' })
 })
 
 test('闹钟：排进队迟了半小时还没送出去的闹钟：不送，记成错过；正在送的、送进去的不动', () => {

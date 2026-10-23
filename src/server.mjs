@@ -728,7 +728,8 @@ ${tail.map((o) => "· " + congjiLine(o)).join(`
 const HANDOFF_FILE = path.join(DATA_DIR, "handoff.json");
 function pendingEvents(now = Date.now()) {
   const cut = now - 30 * 60 * 1000;
-  return [...events.values()].filter((e) => e.status === "delivered" || e.status === "reserved" || e.pendingReply || e.status === "expired" && (e.expiredAt || 0) > cut);
+  // 换窗时作废的旧交接卡不算欠回复（不然新窗口会对过期窗口再说一遍「接上了」）
+  return [...events.values()].filter((e) => e.status === "delivered" || e.status === "reserved" || e.pendingReply || e.status === "expired" && e.expiredWhy !== "handoff-superseded" && (e.expiredAt || 0) > cut);
 }
 const oneLine = (s, n) => {
   const t = String(s || "").replace(/\s+/g, " ").trim();
@@ -777,7 +778,8 @@ const HANDOFF_CHECK = '新窗口先做（默认只读，核对完再动手）：
 function handoffBlock() {
   const h = handoffRead();
   const card = h.readError ? `【交接卡】读失败（${h.readError}），不能判断上个窗口有没有写过——先跟家里人说一声，别当成没有。` : h.text && !h.ackedAt ? `【交接卡·编号 ${h.cardId || "（旧卡无编号）"}·上个窗口 ${bjClock(h.writtenAt)} 写的】
-${h.text}` : h.text ? `【交接卡】上个窗口没写新的（上一张 ${bjClock(h.writtenAt)} 写的，${bjClock(h.ackedAt)} 已交接过）。` : "【交接卡】上个窗口没写。";
+${h.text}` : h.text ? `【交接卡·编号 ${h.cardId || "（旧卡无编号）"}·${bjClock(h.writtenAt)} 写的（${bjClock(h.ackedAt)} 有窗口核对过；之后没人写新的，这张还是最新的）】
+${h.text}` : "【交接卡】上个窗口没写。";
   return `${card}
 
 【桥上看得见的现场】
@@ -1308,7 +1310,7 @@ const SWAP_SCRIPT = CFG.swapWindowScript ? expandHome(CFG.swapWindowScript) : ""
 // 最要紧的一句：回复只能走 bridge_reply，对话框里写的字家里一个都看不到。
 function buildModelContext(id, kind, room, text) {
   return [
-    `[cong-bridge] 这是家里送来的真实消息（${kind === "wake" ? "定时醒来" : "房间 " + room}），不是这个对话里的人打的字。`,
+    `[cong-bridge] 这是家里送来的真实消息（${kind === "wake" ? "定时醒来" : kind === "handoff" ? "换窗交接" : "房间 " + room}），不是这个对话里的人打的字。`,
     `你是${AGENT_NAME}。按你平时的样子回。`,
     `回复**只能**通过工具 bridge_reply(eventId="${id}", text=你要说的话) 送回去；你在这个对话框里写的话，家里人一个字都看不到。`,
     CFG.extraContext ? String(CFG.extraContext) : null,
@@ -1395,6 +1397,40 @@ function makeMcp() {
           w(sess === oaSess ? "done" : "superseded");
         takeovers.delete(sess);
       }
+      // 挂桥的回执只有卡片看得见，模型那边看不到——他只能自己去 bridge_handoff read，不知道要翻就不知道上个窗口干了什么。
+      // 换成新对话的那一刻，把交接卡当一条消息排进队列，卡片下一轮 sync 就把它送进对话，新窗口一开就读到。
+      if (changed) {
+        try {
+          const blk = handoffBlock().trim();
+          // 上一个窗口还没取走的交接卡作废，队里只留最新这张（卡片正拿着的、已送进去的不动）；
+          // 先留快照，新卡排不进去（落盘失败 enqueue 会抛）就把旧卡恢复原样
+          const nowMs = Date.now(), old = [];
+          for (const e of events.values())
+            if (e.kind === "handoff" && e.status === "pending") {
+              old.push([e, { ...e }]);
+              e.status = "expired";
+              e.expiredAt = nowMs;
+              e.expiredWhy = "handoff-superseded";
+            }
+          try {
+            enqueue("handoff", "chat", `【换窗交接】这是新窗口。桥把上一个窗口留的交接卡直接递给你，不用自己去翻：
+
+${blk}
+
+看完先 bridge_handoff(action="ack", cardId=卡上的编号, note=一句你核对到的)，再用 bridge_reply 说一句你接上了什么（一两句，别念全文）。`);
+          } catch (e) {
+            for (const [ev, snap] of old) {
+              Object.keys(ev).forEach((k) => delete ev[k]);
+              Object.assign(ev, snap);
+            }
+            persist();
+            throw e;
+          }
+          log(`新窗口 ${cid}：交接卡已排进队列，卡片下一轮送进对话${old.length ? `（作废 ${old.length} 张旧窗口没取走的）` : ""}`);
+        } catch (e) {
+          log(`⚠️ 新窗口 ${cid}：交接卡没排进队列（${e?.message || e}）——他得自己 bridge_handoff read`);
+        }
+      }
     } else
       log(`⚠️ 挂上桥但拿不到会话 ID——没法把主卡指过来，只能等租约自然到期`);
     let persona = "";
@@ -1458,7 +1494,7 @@ function makeMcp() {
     const picked = pickNextEvent(pendingNow, lastClaimedWasPriority, isPriorityEvent, isOwnerEvent);
     const ev = picked ? picked.event : undefined;
     if (picked && picked.index > 0)
-      log(picked.why === "priority" ? `优先件插队 ${ev.id}，排在它前面的 ${picked.index} 条下一轮先送` : `${OWNER_NAME}的话插队 ${ev.id}，排在它前面的 ${picked.index} 条往后让`);
+      log(picked.why === "handoff" ? `换窗交接卡插队 ${ev.id}，排在它前面的 ${picked.index} 条下一轮先送` : picked.why === "priority" ? `优先件插队 ${ev.id}，排在它前面的 ${picked.index} 条下一轮先送` : `${OWNER_NAME}的话插队 ${ev.id}，排在它前面的 ${picked.index} 条往后让`);
     const cid = oaSess ? "sess:" + oaSess.slice(0, 16) : cardId || "anon";
     const seenBefore = cardSeen.get(cid);
     cardSeen.set(cid, { ua: String(ua || "").slice(0, 70), vis: vis || "?", at: Date.now(), oaSess: oaSess.slice(0, 12), stale: protocol !== 2 });

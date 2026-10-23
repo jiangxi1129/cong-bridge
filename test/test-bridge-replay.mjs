@@ -365,8 +365,23 @@ test('交接卡：写了新窗口挂上就先看到，确认后不再当新卡�
     const ack = await box.tool('bridge_handoff', { action: 'ack', cardId: id1, note: '核对过，UNO 已结' }, 'win-2')
     assert.match(textOf(ack), /交接确认了/)
     open = textOf(await box.tool('bridge_listener_open', {}, 'win-3'))
-    assert.match(open, /上个窗口没写新的/)
-    assert.doesNotMatch(open, /给朋友回第一封信/)
+    // 交接过的卡，后面的窗口照样看得到全文
+    assert.match(open, /有窗口核对过/)
+    assert.match(open, /给朋友回第一封信/)
+    // 换到新对话那一刻，交接卡自动排进队列，卡片 sync 取出来送进对话（模型看不到 open 的回执）
+    const st = readFileSync(path.join(box.root, 'data', 'state.json'), 'utf8')
+    // 旧窗口没取走的作废，队里 pending 的交接卡恰好一张、是最新的；sync 第一条就是它
+    const evs = (JSON.parse(st).pending || []).filter((e) => e && e.kind === 'handoff' && e.status === 'pending')
+    assert.equal(evs.length, 1, 'pending 的交接卡只能有一张：' + evs.length)
+    assert.match(evs[0].visibleText, /给朋友回第一封信/)
+    const first = JSON.stringify(await box.tool('bridge_listener_sync', { protocol: 2 }, 'win-3'))
+    assert.match(first, /"kind":"handoff"/)
+    assert.match(first, /给朋友回第一封信/)
+    assert.match(first, /换窗交接/)
+    // 作废的旧交接卡不算欠回复
+    const owed = textOf(await box.tool('bridge_pending', {}, 'win-3'))
+    // win-2 挂桥时排进去的那张（卡还没被核对，写的是「上个窗口 … 写的」）被 win-3 作废了，不能出现在欠回复里
+    assert.doesNotMatch(owed, /·上个窗口 [^】]* 写的】/, 'bridge_pending 不该列出作废的旧交接卡：' + owed.slice(0, 300))
     const read = textOf(await box.tool('bridge_handoff', { action: 'read' }, 'win-3'))
     assert.match(read, /【桥上看得见的现场】/)
   } finally { await box.close() }
@@ -410,7 +425,7 @@ test('交接卡：工具清单没刷新也能用——home_call(server=handoff) 
     const bad = await box.tool('home_call', { server: 'handoff', tool: 'ack', args: { cardId: 'hc_00000000' } }, 'w2')
     assert.equal(bad.isError, true)
     assert.match(textOf(await box.tool('home_call', { server: 'handoff', tool: 'ack', args: { cardId: id, note: '核对过' } }, 'w2')), /交接确认了/)
-    assert.match(textOf(await box.tool('bridge_listener_open', {}, 'w3')), /上个窗口没写新的/)
+    assert.match(textOf(await box.tool('bridge_listener_open', {}, 'w3')), /有窗口核对过/)   // 交接过的也给全文
     const nope = await box.tool('home_call', { server: 'handoff', tool: 'delete', args: {} }, 'w3')
     assert.equal(nope.isError, true)
     // home_call 这条路也受同一份合同管
