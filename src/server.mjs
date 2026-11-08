@@ -1351,25 +1351,32 @@ function listenerHtml() {
 <title>${LABEL}</title><style>body{font-family:system-ui,sans-serif;margin:0;padding:10px;background:transparent;color:CanvasText}
 .card{border:1px solid color-mix(in srgb,CanvasText 18%,transparent);border-radius:12px;padding:12px}.s{margin-top:6px;font-size:12px;opacity:.7}</style></head>
 <body><div class="card"><strong>${LABEL}</strong><div id="s" class="s">挂上了，等家里的消息…</div></div>
-<script>(()=>{const SYNC=${SYNC_MS};const pending=new Map();let nid=1,busy=false,ok=0,fail=0;const S=document.getElementById('s');
+<script>(()=>{const SYNC=${SYNC_MS};const pending=new Map();let nid=1,busy=false,ok=0,fail=0,handshake='legacy';const S=document.getElementById('s');
 const set=t=>{S.textContent=t};
-function req(method,params){const id=nid++;window.parent.postMessage({jsonrpc:'2.0',id,method,params},'*');return new Promise((res,rej)=>{pending.set(id,{res,rej});setTimeout(()=>{const e=pending.get(id);if(!e)return;pending.delete(id);rej(new Error(method+' timed out'))},18000)})}
-window.addEventListener('message',ev=>{if(ev.source!==window.parent)return;const m=ev.data;if(!m||m.jsonrpc!=='2.0'||m.id===undefined||!pending.has(m.id))return;const e=pending.get(m.id);pending.delete(m.id);m.error?e.rej(new Error(m.error.message||'host error')):e.res(m.result)},{passive:true});
+function req(method,params,timeout=18000){const id=nid++;window.parent.postMessage({jsonrpc:'2.0',id,method,params},'*');return new Promise((res,rej)=>{pending.set(id,{res,rej});setTimeout(()=>{const e=pending.get(id);if(!e)return;pending.delete(id);const x=new Error(method+' timed out');x.code='TIMEOUT';rej(x)},timeout)})}
+window.addEventListener('message',ev=>{if(ev.source!==window.parent)return;const m=ev.data;if(!m||m.jsonrpc!=='2.0'||m.id===undefined||!pending.has(m.id))return;const e=pending.get(m.id);pending.delete(m.id);m.error?e.rej(Object.assign(new Error(m.error.message||'host error'),{code:m.error.code})):e.res(m.result)},{passive:true});
 const CID=(self.crypto&&crypto.randomUUID?crypto.randomUUID():String(Math.random()).slice(2,10));try{document.documentElement.setAttribute('data-cong-cid',CID)}catch(e){}
 const call=(name,args)=>req('tools/call',{name,arguments:args||{}});
 async function dispatch(ev){await req('ui/update-model-context',{content:[{type:'text',text:String(ev.modelContext||'')}],structuredContent:{bridgeEvent:{eventId:String(ev.id),kind:String(ev.kind||''),createdAt:String(ev.createdAt||'')}}});
 await req('ui/message',{role:'user',content:[{type:'text',text:${JSON.stringify(MESSAGE_PREFIX + '\n\n')}+String(ev.visibleText||'').trim()}]})}
-async function once(){if(busy)return;busy=true;try{const r=await call('bridge_listener_sync',{protocol:2,cardId:CID,ua:(navigator&&navigator.userAgent||'').slice(0,120),vis:(document&&document.visibilityState)||'?'});const ev=r&&r._meta&&r._meta.event;if(!ev){set('在听。没新消息（'+ok+' 送达 / '+fail+' 失败）');return}
+async function once(){if(busy)return;busy=true;try{const r=await call('bridge_listener_sync',{protocol:2,cardId:CID,ua:(navigator&&navigator.userAgent||'').slice(0,120),vis:(document&&document.visibilityState)||'?',handshake});const ev=r&&r._meta&&r._meta.event;if(!ev){set('在听。没新消息（'+ok+' 送达 / '+fail+' 失败）');return}
 try{set('送 '+ev.id+' …');await dispatch(ev);const ack=await call('bridge_listener_delivered',{eventId:String(ev.id),claimId:String(ev.claimId||'')});if(!ack||!ack.structuredContent||!ack.structuredContent.delivered)throw new Error('delivery commit rejected');ok++;set('送达 '+ev.id)}catch(e){fail++;await call('bridge_listener_release',{eventId:String(ev.id),claimId:String(ev.claimId||''),reason:String(e&&e.message?e.message:e).slice(0,200)}).catch(()=>{});throw e}}
 catch(e){set('桥出错：'+(e&&e.message?e.message:String(e)))}finally{busy=false}}
-setInterval(()=>void once(),SYNC);void once();})();</script></body></html>`;
+async function start(){try{await req('ui/initialize',{appInfo:{name:'cong-bridge',version:'0.1.0'},appCapabilities:{},protocolVersion:'2026-01-26'},3000);window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized',params:{}},'*');handshake='ok'}catch(e){handshake=e&&(-32601===e.code||'TIMEOUT'===e.code)?'legacy':'failed'}setInterval(()=>void once(),SYNC);void once()}
+void start();})();</script></body></html>`;
 }
-const RESOURCE_URI = "ui://cong-bridge/listener.html";
+// 2026-11: ChatGPT caches the App template per resource URI and keeps pointing old tool calls at it.
+// Bump the URI when the card HTML changes, and keep serving the old URI with the new HTML.
+const RESOURCE_URI = "ui://cong-bridge/listener-v2.html";
+const LEGACY_RESOURCE_URIS = ["ui://cong-bridge/listener.html"];
 function makeMcp() {
   const server = new McpServer({ name: "cong-bridge", version: "0.1.0" });
   registerAppResource(server, "cong-bridge-listener", RESOURCE_URI, {}, async () => ({
     contents: [{ uri: RESOURCE_URI, mimeType: RESOURCE_MIME_TYPE, text: listenerHtml(), _meta: { ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: [] } } } }]
   }));
+  LEGACY_RESOURCE_URIS.forEach((uri, i) => registerAppResource(server, `cong-bridge-listener-legacy-${i}`, uri, {}, async () => ({
+    contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: listenerHtml(), _meta: { ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: [] } } } }]
+  })));
   server.registerTool("bridge_listener_open", {
     title: "挂上桥",
     description: "把桥的卡片挂进这个对话。挂上之后家里的消息会自动送进来；你只需要用 bridge_reply 回。挂上时会给你看交接卡、记事本和身份文件（配了的话）。",
@@ -1459,11 +1466,11 @@ ${blk}
   server.registerTool("bridge_listener_sync", {
     title: "桥同步",
     description: "（卡片专用）取一条待送的事件。protocol 必须传 2。",
-    inputSchema: { protocol: z.number().optional(), cardId: z.string().optional(), ua: z.string().optional(), vis: z.string().optional() },
+    inputSchema: { protocol: z.number().optional(), cardId: z.string().optional(), ua: z.string().optional(), vis: z.string().optional(), handshake: z.enum(["ok", "failed", "legacy"]).optional() },
     outputSchema: { hasEvent: z.boolean(), eventId: z.string().optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     _meta: { ui: { visibility: ["app"] } }
-  }, async ({ protocol, cardId, ua, vis } = {}, extra) => {
+  }, async ({ protocol, cardId, ua, vis, handshake } = {}, extra) => {
     const oaSess = String(extra?._meta?.["openai/session"] || extra?.requestInfo?._meta?.["openai/session"] || "");
     if (oaSess)
       lastOaSession = oaSess;
@@ -1471,8 +1478,10 @@ ${blk}
       if (Date.now() - t > 10 * 60 * 1000)
         instanceSeenAt.delete(k);
     if (cardId && cardId !== lastCardId) {
-      if (!instanceSeenAt.has(cardId))
+      if (!instanceSeenAt.has(cardId)) {
         log(`卡片换实例：${lastCardId || "(无)"} → ${cardId} · ua=${String(ua || "?").slice(0, 70)} · ${vis || "?"}`);
+        if (handshake) log(`卡片握手 ${handshake === "ok" ? "ok" : handshake === "legacy" ? "旧宿主" : "失败"} · ${cardId}`);
+      }
       lastCardId = cardId;
     } else if (cardId && syncCount % 100 === 0) {
       log(`卡片还在（${cardId}）· ${vis || "?"} · 第 ${syncCount} 次`);
